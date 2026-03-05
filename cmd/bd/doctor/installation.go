@@ -4,13 +4,11 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 
 	"github.com/steveyegge/beads/cmd/bd/doctor/fix"
 	"github.com/steveyegge/beads/internal/configfile"
-	"github.com/steveyegge/beads/internal/git"
 	"github.com/steveyegge/beads/internal/storage/dolt"
 )
 
@@ -87,90 +85,6 @@ func CheckPermissions(path string) DoctorCheck {
 		Name:    "Permissions",
 		Status:  StatusOK,
 		Message: "All permissions OK",
-	}
-}
-
-// CheckUntrackedBeadsFiles checks for untracked .beads/*.jsonl files that should be committed.
-// This check only applies to legacy (non-Dolt) backends where JSONL files are the data store.
-// In sync-branch mode, JSONL files are intentionally untracked in working branches
-// and only committed to the dedicated sync branch (GH#858).
-func CheckUntrackedBeadsFiles(path string) DoctorCheck {
-	backend, _ := getBackendAndBeadsDir(path)
-
-	// Dolt backends store data on the server, not in JSONL files
-	if backend == configfile.BackendDolt {
-		return DoctorCheck{
-			Name:    "Untracked Files",
-			Status:  StatusOK,
-			Message: "N/A (Dolt backend stores data on server)",
-		}
-	}
-
-	beadsDir := filepath.Join(path, ".beads")
-
-	// Skip if .beads doesn't exist
-	if _, err := os.Stat(beadsDir); os.IsNotExist(err) {
-		return DoctorCheck{
-			Name:    "Untracked Files",
-			Status:  StatusOK,
-			Message: "N/A (no .beads directory)",
-		}
-	}
-
-	// Check if we're in a git repository using worktree-aware detection
-	_, err := git.GetGitDir()
-	if err != nil {
-		return DoctorCheck{
-			Name:    "Untracked Files",
-			Status:  StatusOK,
-			Message: "N/A (not a git repository)",
-		}
-	}
-
-	// Run git status --porcelain to find untracked files in .beads/
-	cmd := exec.Command("git", "status", "--porcelain", ".beads/")
-	cmd.Dir = path
-	output, err := cmd.Output()
-	if err != nil {
-		return DoctorCheck{
-			Name:    "Untracked Files",
-			Status:  StatusWarning,
-			Message: "Unable to check git status",
-			Detail:  err.Error(),
-		}
-	}
-
-	// Parse output for untracked JSONL files (lines starting with "??")
-	var untrackedJSONL []string
-	for _, line := range strings.Split(string(output), "\n") {
-		line = strings.TrimSpace(line)
-		if line == "" {
-			continue
-		}
-		// Untracked files start with "?? "
-		if strings.HasPrefix(line, "?? ") {
-			file := strings.TrimPrefix(line, "?? ")
-			// Only care about .jsonl files
-			if strings.HasSuffix(file, ".jsonl") {
-				untrackedJSONL = append(untrackedJSONL, filepath.Base(file))
-			}
-		}
-	}
-
-	if len(untrackedJSONL) == 0 {
-		return DoctorCheck{
-			Name:    "Untracked Files",
-			Status:  StatusOK,
-			Message: "All .beads/*.jsonl files are tracked",
-		}
-	}
-
-	return DoctorCheck{
-		Name:    "Untracked Files",
-		Status:  StatusWarning,
-		Message: fmt.Sprintf("Untracked JSONL files: %s", strings.Join(untrackedJSONL, ", ")),
-		Detail:  "These files should be committed to propagate changes to other clones",
-		Fix:     "Run 'bd doctor --fix' to stage and commit untracked files, or manually: git add .beads/*.jsonl && git commit",
 	}
 }
 

@@ -101,7 +101,6 @@ var agentEnrichers = map[string]enricher{
 	"Project Gitignore":            enrichProjectGitignore,
 	"Git Working Tree":             enrichGitWorkingTree,
 	"Git Upstream":                 enrichGitUpstream,
-	"Fresh Clone":                  enrichFreshClone,
 	"Database Config":              enrichDatabaseConfig,
 	"Config Values":                enrichConfigValues,
 	"Role Configuration":           enrichBeadsRole,
@@ -136,7 +135,6 @@ var agentEnrichers = map[string]enricher{
 	"Redirect Target Valid":        enrichRedirectTarget,
 	"Redirect Tracking":            enrichRedirectTracking,
 	"Redirect Target Sync":         enrichRedirectTargetSync,
-	"Untracked Files":              enrichUntrackedFiles,
 }
 
 // --- Enrichment functions ---
@@ -303,17 +301,6 @@ func enrichGitUpstream(dc DoctorCheck) agentEnrichment {
 		expected:    "Local branch is in sync with upstream tracking branch",
 		commands:    []string{"git pull --rebase"},
 		sourceFiles: []string{"cmd/bd/doctor/git.go:CheckGitUpstream"},
-	}
-}
-
-func enrichFreshClone(dc DoctorCheck) agentEnrichment {
-	return agentEnrichment{
-		severity:    "blocking",
-		explanation: fmt.Sprintf("Fresh clone detected: %s. The .beads/ directory exists (committed to git) but the local database hasn't been initialized. Run bd init to bootstrap from the tracked config.", dc.Message),
-		observed:    dc.Message,
-		expected:    "Local database initialized and ready for use",
-		commands:    []string{"bd init"},
-		sourceFiles: []string{"cmd/bd/doctor/legacy.go:CheckFreshClone"},
 	}
 }
 
@@ -686,16 +673,5 @@ func enrichRedirectTargetSync(dc DoctorCheck) agentEnrichment {
 		expected:    "Redirect target has a beads-sync worktree for database synchronization",
 		commands:    []string{"bd init"},
 		sourceFiles: []string{"cmd/bd/doctor/gitignore.go:CheckRedirectTargetSyncWorktree"},
-	}
-}
-
-func enrichUntrackedFiles(dc DoctorCheck) agentEnrichment {
-	return agentEnrichment{
-		severity:    "advisory",
-		explanation: fmt.Sprintf("Untracked beads files: %s. Legacy data files in .beads/ are not tracked by git. In direct-commit mode, these should be committed to propagate changes. (Dolt backends store data on the server and do not need tracked files.)", dc.Message),
-		observed:    dc.Message,
-		expected:    "All legacy .beads/ data files are tracked by git (or using Dolt/sync-branch mode)",
-		commands:    []string{"git add .beads/*.jsonl && git commit -m 'sync beads data'"},
-		sourceFiles: []string{"cmd/bd/doctor/installation.go:CheckUntrackedBeadsFiles"},
 	}
 }

@@ -64,7 +64,7 @@ func checkDatabaseFreshness(ctx context.Context, store *dolt.DoltStore, beadsDir
 	// Use a 1-second tolerance to account for filesystem timestamp granularity.
 	if jsonlMtime.After(lastImportTime.Add(1 * time.Second)) {
 		return fmt.Errorf("database out of sync: issues.jsonl is newer than last import (%s > %s)\n"+
-			"Run 'bd init --from-jsonl' or 'bd backup restore' to re-sync\n"+
+			"Run 'bd backup restore' to re-sync\n"+
 			"Or use --allow-stale to skip this check",
 			jsonlMtime.Format(time.RFC3339), lastImportTime.Format(time.RFC3339))
 	}

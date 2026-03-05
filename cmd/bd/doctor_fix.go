@@ -278,12 +278,6 @@ func applyFixList(path string, fixes []doctorCheck) {
 			}
 		case "Database Config":
 			err = fix.DatabaseConfig(path)
-		case "JSONL Config":
-			fmt.Printf("  ⚠ JSONL config migration removed (Dolt-native sync)\n")
-			continue
-		case "Untracked Files":
-			fmt.Printf("  ⚠ Untracked JSONL fix removed (Dolt-native storage)\n")
-			continue
 		case "Merge Artifacts":
 			err = fix.MergeArtifacts(path)
 		case "Orphaned Dependencies":
@@ -324,8 +318,6 @@ func applyFixList(path string, fixes []doctorCheck) {
 			err = fix.PatrolPollution(path)
 		case "Lock Files":
 			err = fix.StaleLockFiles(path)
-		case "Fresh Clone":
-			err = fix.FreshCloneImport(path, Version)
 		case "Pending Migrations":
 			err = fixPendingMigrations(path)
 		case "Config Values":

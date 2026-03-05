@@ -5,9 +5,7 @@ package doctor
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -503,23 +501,16 @@ func getPatrolPollutionIDs(path string) ([]string, error) {
 	return ids, nil
 }
 
-// loadMaintenanceIssues loads issues for maintenance checks.
-// It prefers Dolt (source of truth) and falls back to legacy JSONL for
-// backwards compatibility with non-Dolt installations.
+// loadMaintenanceIssues loads issues for maintenance checks from the Dolt database.
 func loadMaintenanceIssues(path string) ([]*types.Issue, error) {
 	beadsDir := resolveBeadsDir(filepath.Join(path, ".beads"))
 
 	issues, err := loadMaintenanceIssuesFromDatabase(beadsDir)
-	if err == nil {
-		return issues, nil
+	if err != nil {
+		return nil, fmt.Errorf("database read failed: %w", err)
 	}
 
-	issues, jsonlErr := loadMaintenanceIssuesFromJSONL(beadsDir)
-	if jsonlErr == nil {
-		return issues, nil
-	}
-
-	return nil, fmt.Errorf("database read failed: %w; JSONL fallback read failed: %v", err, jsonlErr)
+	return issues, nil
 }
 
 func loadMaintenanceIssuesFromDatabase(beadsDir string) ([]*types.Issue, error) {
@@ -534,44 +525,15 @@ func loadMaintenanceIssuesFromDatabase(beadsDir string) ([]*types.Issue, error) 
 	return store.SearchIssues(ctx, "", types.IssueFilter{Ephemeral: &ephemeral})
 }
 
-func loadMaintenanceIssuesFromJSONL(beadsDir string) ([]*types.Issue, error) {
-	jsonlPath := filepath.Join(beadsDir, "issues.jsonl")
-	file, err := os.Open(jsonlPath) // #nosec G304 - path constructed safely
-	if err != nil {
-		return nil, err
-	}
-	defer file.Close()
-
-	var issues []*types.Issue
-	decoder := json.NewDecoder(file)
-	for {
-		issue := &types.Issue{}
-		if err := decoder.Decode(issue); err != nil {
-			if err == io.EOF {
-				break
-			}
-			return nil, err
-		}
-		issues = append(issues, issue)
-	}
-
-	return issues, nil
-}
-
 func loadMisclassifiedWispIssues(path string) ([]*types.Issue, error) {
 	beadsDir := resolveBeadsDir(filepath.Join(path, ".beads"))
 
 	issues, err := loadMisclassifiedWispIssuesFromDatabase(beadsDir)
-	if err == nil {
-		return issues, nil
+	if err != nil {
+		return nil, fmt.Errorf("database read failed: %w", err)
 	}
 
-	issues, jsonlErr := loadMisclassifiedWispIssuesFromJSONL(beadsDir)
-	if jsonlErr == nil {
-		return issues, nil
-	}
-
-	return nil, fmt.Errorf("database read failed: %w; JSONL fallback read failed: %v", err, jsonlErr)
+	return issues, nil
 }
 
 func loadMisclassifiedWispIssuesFromDatabase(beadsDir string) ([]*types.Issue, error) {
@@ -604,24 +566,6 @@ func loadMisclassifiedWispIssuesFromDatabase(beadsDir string) ([]*types.Issue, e
 	}
 
 	return issues, nil
-}
-
-func loadMisclassifiedWispIssuesFromJSONL(beadsDir string) ([]*types.Issue, error) {
-	issues, err := loadMaintenanceIssuesFromJSONL(beadsDir)
-	if err != nil {
-		return nil, err
-	}
-
-	var filtered []*types.Issue
-	for _, issue := range issues {
-		if issue == nil {
-			continue
-		}
-		if strings.Contains(issue.ID, "-wisp-") && !issue.Ephemeral {
-			filtered = append(filtered, issue)
-		}
-	}
-	return filtered, nil
 }
 
 func classifyPatrolIssue(title string) patrolIssueKind {

@@ -58,7 +58,6 @@ var (
 	doctorGastown              bool   // running in gastown multi-workspace mode
 	gastownDuplicatesThreshold int    // duplicate tolerance threshold for gastown mode
 	doctorServer               bool   // run server mode health checks
-	doctorMigration            string // migration validation mode: "pre" or "post"
 	doctorAgent                bool   // agent-facing diagnostic mode (ZFC-compliant)
 )
 
@@ -166,7 +165,7 @@ Examples:
   bd doctor --fix -i     # Confirm each fix individually
   bd doctor --fix --fix-child-parent  # Also fix child→parent deps (opt-in)
   bd doctor --fix --force # Force repair even when database can't be opened
-  bd doctor --fix --source=jsonl # Rebuild database from JSONL (source of truth)
+  bd doctor --fix               # Auto-fix detected issues
   bd doctor --dry-run    # Preview what --fix would do without making changes
   bd doctor --perf       # Performance diagnostics
   bd doctor --output diagnostics.json  # Export diagnostics to file
@@ -245,12 +244,6 @@ Examples:
 			return
 		}
 
-		// Run migration validation if --migration flag is set
-		if doctorMigration != "" {
-			runMigrationValidation(absPath, doctorMigration)
-			return
-		}
-
 		// Run diagnostics
 		result := runDiagnostics(absPath)
 
@@ -314,7 +307,6 @@ func init() {
 	doctorCmd.Flags().BoolVar(&doctorGastown, "gastown", false, "Running in gastown multi-workspace mode (routes.jsonl is expected, higher duplicate tolerance)")
 	doctorCmd.Flags().IntVar(&gastownDuplicatesThreshold, "gastown-duplicates-threshold", 1000, "Duplicate tolerance threshold for gastown mode (wisps are ephemeral)")
 	doctorCmd.Flags().BoolVar(&doctorServer, "server", false, "Run Dolt server mode health checks (connectivity, version, schema)")
-	doctorCmd.Flags().StringVar(&doctorMigration, "migration", "", "Run Dolt migration validation: 'pre' (before migration) or 'post' (after migration)")
 	doctorCmd.Flags().BoolVar(&doctorAgent, "agent", false, "Agent-facing diagnostic mode: rich context for AI agents (ZFC-compliant)")
 }
 
@@ -388,14 +380,6 @@ func runDiagnostics(path string) doctorResult {
 	// If no .beads/, skip remaining checks
 	if installCheck.Status != statusOK {
 		return result
-	}
-
-	// Check 1a: Fresh clone detection
-	// Must come early - if this is a fresh clone, other checks may be misleading
-	freshCloneCheck := convertWithCategory(doctor.CheckFreshClone(path), doctor.CategoryCore)
-	result.Checks = append(result.Checks, freshCloneCheck)
-	if freshCloneCheck.Status == statusWarning || freshCloneCheck.Status == statusError {
-		result.OverallOK = false
 	}
 
 	// GH#1981: Run lock health check BEFORE any checks that open embedded
@@ -664,11 +648,6 @@ func runDiagnostics(path string) doctorResult {
 	result.Checks = append(result.Checks, deletionsCheck)
 	// Don't fail overall check for missing deletions manifest, just warn
 
-	// Check 20: Untracked .beads/*.jsonl files
-	untrackedCheck := convertWithCategory(doctor.CheckUntrackedBeadsFiles(path), doctor.CategoryData)
-	result.Checks = append(result.Checks, untrackedCheck)
-	// Don't fail overall check for untracked files, just warn
-
 	// Check 21: Merge artifacts (from bd clean)
 	mergeArtifactsCheck := convertDoctorCheck(doctor.CheckMergeArtifacts(path))
 	result.Checks = append(result.Checks, mergeArtifactsCheck)
@@ -739,7 +718,7 @@ func runDiagnostics(path string) doctorResult {
 	// Don't fail overall check for KV sync warning, just inform
 
 	// Check 32: Dolt locks (uncommitted changes)
-	doltLocksCheck := convertDoctorCheck(doctor.CheckDoltLocks(path))
+	doltLocksCheck := convertDoctorCheck(doctor.CheckDoltStatus(path))
 	result.Checks = append(result.Checks, doltLocksCheck)
 	// Don't fail overall check for Dolt locks, just warn
 
@@ -1098,115 +1077,5 @@ func printAllChecks(checksByCategory map[string][]doctorCheck) {
 			}
 		}
 		fmt.Println()
-	}
-}
-
-// runMigrationValidation runs Dolt migration validation checks.
-// Phase can be "pre" (before migration) or "post" (after migration).
-// Outputs machine-parseable JSON when --json flag is set.
-func runMigrationValidation(path string, phase string) {
-	var check doctorCheck
-	var result doctor.MigrationValidationResult
-
-	switch phase {
-	case "pre":
-		dc, mr := doctor.CheckMigrationReadiness(path)
-		check = convertDoctorCheck(dc)
-		result = mr
-	case "post":
-		dc, mr := doctor.CheckMigrationCompletion(path)
-		check = convertDoctorCheck(dc)
-		result = mr
-	default:
-		FatalError("invalid migration phase %q (use 'pre' or 'post')", phase)
-	}
-
-	// JSON output for machine consumption
-	if jsonOutput {
-		output := struct {
-			Check      doctorCheck                      `json:"check"`
-			Validation doctor.MigrationValidationResult `json:"validation"`
-			CLIVersion string                           `json:"cli_version"`
-			Timestamp  string                           `json:"timestamp"`
-		}{
-			Check:      check,
-			Validation: result,
-			CLIVersion: Version,
-			Timestamp:  time.Now().UTC().Format(time.RFC3339),
-		}
-		outputJSON(output)
-		if !result.Ready {
-			os.Exit(1)
-		}
-		return
-	}
-
-	// Human-readable output
-	fmt.Printf("\nbd doctor --migration=%s v%s\n\n", phase, Version)
-
-	// Print main status
-	var statusIcon string
-	switch check.Status {
-	case statusOK:
-		statusIcon = ui.RenderPassIcon()
-	case statusWarning:
-		statusIcon = ui.RenderWarnIcon()
-	case statusError:
-		statusIcon = ui.RenderFailIcon()
-	}
-
-	fmt.Printf("%s  %s: %s\n", statusIcon, check.Name, check.Message)
-	if check.Detail != "" {
-		for _, line := range strings.Split(check.Detail, "\n") {
-			fmt.Printf("     %s\n", ui.RenderMuted(line))
-		}
-	}
-
-	// Print validation details
-	fmt.Println()
-	fmt.Println(ui.RenderCategory("Validation Details"))
-	fmt.Printf("  Backend:     %s\n", result.Backend)
-	fmt.Printf("  JSONL Count: %d\n", result.JSONLCount)
-	if result.SQLiteCount > 0 {
-		fmt.Printf("  SQLite Count: %d\n", result.SQLiteCount)
-	}
-	if result.DoltCount > 0 {
-		fmt.Printf("  Dolt Count:  %d\n", result.DoltCount)
-	}
-	fmt.Printf("  JSONL Valid: %v\n", result.JSONLValid)
-	if result.JSONLMalformed > 0 {
-		fmt.Printf("  Malformed Lines: %d\n", result.JSONLMalformed)
-	}
-
-	// Print warnings
-	if len(result.Warnings) > 0 {
-		fmt.Println()
-		fmt.Println(ui.RenderCategory("Warnings"))
-		for _, warn := range result.Warnings {
-			fmt.Printf("  %s  %s\n", ui.RenderWarnIcon(), warn)
-		}
-	}
-
-	// Print errors
-	if len(result.Errors) > 0 {
-		fmt.Println()
-		fmt.Println(ui.RenderCategory("Errors"))
-		for _, err := range result.Errors {
-			fmt.Printf("  %s  %s\n", ui.RenderFailIcon(), err)
-		}
-	}
-
-	// Print fix suggestion
-	if check.Fix != "" {
-		fmt.Println()
-		fmt.Printf("%s  %s\n", ui.RenderMuted("Fix:"), check.Fix)
-	}
-
-	fmt.Println()
-	if result.Ready {
-		fmt.Printf("%s\n", ui.RenderPass("✓ Migration validation passed"))
-	} else {
-		fmt.Printf("%s\n", ui.RenderFail("✗ Migration validation failed"))
-		os.Exit(1)
 	}
 }
