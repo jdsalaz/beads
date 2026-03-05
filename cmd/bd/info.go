@@ -706,7 +706,6 @@ var versionChanges = []VersionChange{
 		Changes: []string{
 			"NEW: bd swarm commands - Create/status/validate for multi-agent batch coordination",
 			"NEW: bd repair command - Detect and repair orphaned foreign key references",
-			"NEW: bd init --from-jsonl - Preserve manual JSONL edits on reinit",
 			"NEW: bd human command - Focused help menu for humans",
 			"NEW: bd show --short - Compact output mode for scripting",
 			"NEW: bd delete --reason - Audit trail for deletions",

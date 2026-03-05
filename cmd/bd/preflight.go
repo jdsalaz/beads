@@ -106,10 +106,6 @@ func runChecks(jsonOutput, skipLint bool) {
 	fmtResult := runFmtCheck()
 	results = append(results, fmtResult)
 
-	// Run beads pollution check
-	beadsResult := runBeadsPollutionCheck()
-	results = append(results, beadsResult)
-
 	// Run nix hash check
 	nixResult := runNixHashCheck()
 	results = append(results, nixResult)
@@ -280,54 +276,6 @@ func runFmtCheck() CheckResult {
 
 	return CheckResult{
 		Name:    "Formatting",
-		Passed:  true,
-		Command: command,
-	}
-}
-
-// runBeadsPollutionCheck detects .beads/issues.jsonl modifications vs merge base.
-func runBeadsPollutionCheck() CheckResult {
-	command := "git diff -- .beads/issues.jsonl"
-
-	// Determine current branch
-	branchCmd := exec.Command("git", "rev-parse", "--abbrev-ref", "HEAD")
-	branchOut, err := branchCmd.Output()
-	if err != nil {
-		return CheckResult{
-			Name:    "No beads pollution",
-			Passed:  false,
-			Skipped: true,
-			Output:  fmt.Sprintf("Cannot determine branch: %v", err),
-			Command: command,
-		}
-	}
-	branch := strings.TrimSpace(string(branchOut))
-
-	var diffOutput []byte
-	if branch != "main" && branch != "HEAD" {
-		// Feature branch: diff against merge base with origin/main
-		cmd := exec.Command("git", "diff", "origin/main...HEAD", "--", ".beads/issues.jsonl")
-		diffOutput, _ = cmd.Output()
-	} else {
-		// On main or detached HEAD: check staged + unstaged changes
-		cmd := exec.Command("git", "diff", "HEAD", "--", ".beads/issues.jsonl")
-		out1, _ := cmd.Output()
-		cmd2 := exec.Command("git", "diff", "--cached", "--", ".beads/issues.jsonl")
-		out2, _ := cmd2.Output()
-		diffOutput = append(out1, out2...)
-	}
-
-	if len(strings.TrimSpace(string(diffOutput))) > 0 {
-		return CheckResult{
-			Name:    "No beads pollution",
-			Passed:  false,
-			Output:  ".beads/issues.jsonl has been modified — revert changes before pushing",
-			Command: command,
-		}
-	}
-
-	return CheckResult{
-		Name:    "No beads pollution",
 		Passed:  true,
 		Command: command,
 	}

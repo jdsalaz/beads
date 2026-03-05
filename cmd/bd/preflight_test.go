@@ -261,22 +261,6 @@ func TestRunFmtCheck_Unformatted(t *testing.T) {
 	}
 }
 
-func TestRunBeadsPollutionCheck_Clean(t *testing.T) {
-	// In a clean repo state (no uncommitted .beads changes), the check should pass.
-	result := runBeadsPollutionCheck()
-	if !result.Passed {
-		// If this fails, it means the test environment itself has .beads changes,
-		// which is valid — skip rather than fail.
-		if strings.Contains(result.Output, "modified") {
-			t.Skip("test environment has .beads changes, skipping")
-		}
-		if result.Skipped {
-			t.Skip("cannot determine branch in test environment")
-		}
-		t.Fatalf("expected beads pollution check to pass in clean state, got: %q", result.Output)
-	}
-}
-
 func TestRunVersionSyncCheck_ScriptFallback(t *testing.T) {
 	// Run from a temp dir where scripts/check-versions.sh does not exist.
 	// The fallback inline logic should be used, resulting in a skipped result

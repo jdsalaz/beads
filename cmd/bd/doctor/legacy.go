@@ -1,14 +1,11 @@
 package doctor
 
 import (
-	"bufio"
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 
-	"github.com/steveyegge/beads/internal/beads"
 	"github.com/steveyegge/beads/internal/configfile"
 )
 
@@ -254,144 +251,4 @@ func CheckDatabaseConfig(repoPath string) DoctorCheck {
 			"  2. Update metadata.json to match the actual filenames\n" +
 			"  3. Or rename the files to match the configuration",
 	}
-}
-
-// CheckFreshClone detects if this is a fresh clone that needs 'bd init'.
-// A fresh clone has legacy JSONL with issues but no database (Dolt or SQLite).
-func CheckFreshClone(repoPath string) DoctorCheck {
-	backend, beadsDir := getBackendAndBeadsDir(repoPath)
-
-	// Check if .beads/ exists
-	if _, err := os.Stat(beadsDir); os.IsNotExist(err) {
-		return DoctorCheck{
-			Name:    "Fresh Clone",
-			Status:  StatusOK,
-			Message: "N/A (no .beads directory)",
-		}
-	}
-
-	// Find the JSONL file
-	var jsonlPath string
-	var jsonlName string
-	for _, name := range []string{"issues.jsonl", "beads.jsonl"} {
-		testPath := filepath.Join(beadsDir, name)
-		if _, err := os.Stat(testPath); err == nil {
-			jsonlPath = testPath
-			jsonlName = name
-			break
-		}
-	}
-
-	// No JSONL file - not a fresh clone situation
-	if jsonlPath == "" {
-		return DoctorCheck{
-			Name:    "Fresh Clone",
-			Status:  StatusOK,
-			Message: "N/A (no JSONL file)",
-		}
-	}
-
-	// Check if database exists (backend-aware)
-	switch backend {
-	case configfile.BackendDolt:
-		// Dolt is directory-backed: treat .beads/dolt as the DB existence signal.
-		if info, err := os.Stat(getDatabasePath(beadsDir)); err == nil && info.IsDir() {
-			return DoctorCheck{
-				Name:    "Fresh Clone",
-				Status:  StatusOK,
-				Message: "Database exists",
-			}
-		}
-	default:
-		// SQLite (default): check configured .db file path.
-		var dbPath string
-		if cfg, err := configfile.Load(beadsDir); err == nil && cfg != nil && cfg.Database != "" {
-			dbPath = cfg.DatabasePath(beadsDir)
-		} else {
-			// Fall back to canonical database name
-			dbPath = filepath.Join(beadsDir, beads.CanonicalDatabaseName)
-		}
-		if _, err := os.Stat(dbPath); err == nil {
-			return DoctorCheck{
-				Name:    "Fresh Clone",
-				Status:  StatusOK,
-				Message: "Database exists",
-			}
-		}
-	}
-
-	// Check if JSONL has any issues (empty JSONL = not really a fresh clone)
-	issueCount, prefix := countJSONLIssuesAndPrefix(jsonlPath)
-	if issueCount == 0 {
-		return DoctorCheck{
-			Name:    "Fresh Clone",
-			Status:  StatusOK,
-			Message: fmt.Sprintf("JSONL exists but is empty (%s)", jsonlName),
-		}
-	}
-
-	// This is a fresh clone! JSONL has issues but no database.
-	fixCmd := "bd init"
-	if prefix != "" {
-		fixCmd = fmt.Sprintf("bd init --prefix %s", prefix)
-	}
-
-	return DoctorCheck{
-		Name:    "Fresh Clone",
-		Status:  StatusWarning,
-		Message: fmt.Sprintf("Fresh clone detected (%d issues in %s, no database)", issueCount, jsonlName),
-		Detail: "This appears to be a freshly cloned repository.\n" +
-			"  The JSONL file contains issues but no local database exists.\n" +
-			"  Run 'bd init' to create the database and import existing issues.",
-		Fix: fmt.Sprintf("Run '%s' to initialize the database and import issues", fixCmd),
-	}
-}
-
-// countJSONLIssuesAndPrefix counts issues in a legacy JSONL file and detects the most common prefix.
-func countJSONLIssuesAndPrefix(jsonlPath string) (int, string) {
-	file, err := os.Open(jsonlPath) //nolint:gosec
-	if err != nil {
-		return 0, ""
-	}
-	defer file.Close()
-
-	count := 0
-	prefixCounts := make(map[string]int)
-
-	scanner := bufio.NewScanner(file)
-	scanner.Buffer(make([]byte, 0, 1024), 2*1024*1024) // 2MB buffer for large lines
-	for scanner.Scan() {
-		line := scanner.Bytes()
-		if len(line) == 0 {
-			continue
-		}
-
-		var issue struct {
-			ID string `json:"id"`
-		}
-		if err := json.Unmarshal(line, &issue); err != nil {
-			continue
-		}
-
-		if issue.ID != "" {
-			count++
-			// Extract prefix (everything before the last dash)
-			if lastDash := strings.LastIndex(issue.ID, "-"); lastDash > 0 {
-				prefix := issue.ID[:lastDash]
-				prefixCounts[prefix]++
-			}
-		}
-	}
-
-	// Find most common prefix
-	var mostCommonPrefix string
-	maxCount := 0
-	for prefix, cnt := range prefixCounts {
-		if cnt > maxCount {
-			maxCount = cnt
-			mostCommonPrefix = prefix
-		}
-	}
-
-	return count, mostCommonPrefix
 }

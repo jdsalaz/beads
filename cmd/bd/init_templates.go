@@ -18,7 +18,7 @@ func createConfigYaml(beadsDir string, noDbMode bool, prefix string) error {
 
 	noDbLine := "# no-db: false"
 	if noDbMode {
-		noDbLine = "no-db: true  # JSONL-only mode, no database"
+		noDbLine = "no-db: true  # Lightweight mode, no database"
 	}
 
 	// In no-db mode, we need to persist the prefix in config.yaml
@@ -37,8 +37,7 @@ func createConfigYaml(beadsDir string, noDbMode bool, prefix string) error {
 # Example: issue-prefix: "myproject" creates issues like "myproject-1", "myproject-2", etc.
 %s
 
-# Use no-db mode: JSONL-only, no Dolt database
-# When true, bd will use .beads/issues.jsonl as the source of truth
+# Use no-db mode: lightweight mode, no Dolt database
 %s
 
 # Enable JSON output by default
@@ -52,7 +51,7 @@ func createConfigYaml(beadsDir string, noDbMode bool, prefix string) error {
 # Default actor for audit trails (overridden by BD_ACTOR or --actor)
 # actor: ""
 
-# Export events (audit trail) to .beads/events.jsonl on each flush/sync
+# Export events (audit trail) on each flush/sync
 # When enabled, new events are appended incrementally using a high-water mark.
 # Use 'bd export --events' to trigger manually regardless of this setting.
 # events-export: false
