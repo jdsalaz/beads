@@ -398,7 +398,7 @@ func enrichDoltLocks(dc DoctorCheck) agentEnrichment {
 		observed:    dc.Message + "\n" + dc.Detail,
 		expected:    "No stale noms LOCK files in .beads/dolt/",
 		commands:    []string{"bd doctor --fix", "find .beads/dolt -name LOCK -delete"},
-		sourceFiles: []string{"cmd/bd/doctor/migration_validation.go:CheckDoltLocks"},
+		sourceFiles: []string{"cmd/bd/doctor/dolt.go:CheckDoltStatus"},
 	}
 }
 
